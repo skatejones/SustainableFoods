@@ -1,9 +1,5 @@
-# GO TO LINE 616 and check entries are ok across yield and there are not empty rows...
-# Redo yield_data column when populating validity columns, because 
-# currently i'm not sure it keeps any LER entries 
-# since yield_value_C is N/A for LER entries...
-
-# Yield measures for C and T in ID 651 and 754 need checking as are not the same  - DONE
+# Code to clean and standardise data extracted from primary articles
+# for use in a meta-analysis of diversified farming effects on biodiversity and yields
 
 library(cairoDevice)
 library(ggplot2)
@@ -31,12 +27,6 @@ library(grid)
 library(gridExtra)
 library(gtable)
 library(maps)
-
-#setwd("C:/Users/hp/Documents/Bioversity/Thesis/Code/Sarah_code")
-
-wd <- readline() #at the prompt, copy and paste your filepath and press enter
-D:\02_Bioversity\30_SustainableFoods\R
-setwd(wd)
 
 # Data preparation --------------------------------------------------------
 
