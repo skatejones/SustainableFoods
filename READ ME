@@ -1,0 +1,7 @@
+A global database of diversified farming effects on biodiversity and yield
+
+Manuscript code: https://github.com/skatejones/SustainableFoods/new/main. Curator: Sarah Jones (s.jones@cgiar.org) Co-authors: Andrea Sánchez, Stella Juventia, Natalia Estrada Carmona (n.e.carmona@cgiar.org). Project start year: 2019. Project location: Montpellier France.
+
+We present a global dataset documenting outcomes of diversified farming practices for biodiversity and agronomic yields compiled through a systematic review of primary studies. The dataset includes 4076 comparisons of biodiversity outcomes from 237 articles, and 1222 comparisons of yield outcomes from 57 articles. It contains evidence from 48 countries of effects on species from 33 taxonomic orders (spanning insects, plants, birds, mammals, eukaryotes, annelids, fungi, and bacteria) of diversifying farms producing annual or perennial crops across 12 FAO commodity groups. Data collection and reporting follows best standards for systematic reviews and is specifically designed for use in meta-analysis. The dataset can also be used a resource for researchers and practitioners to easily access information on where diversified farms effectively contribute to biodiversity and food production outcomes. (2021-02-25) 
+
+One R script is used to clean and format the original data extracted from primary articles for use in meta-analyses. 
