@@ -6,11 +6,12 @@ We present a global dataset documenting outcomes of diversified farming practice
 
 The R scripts are meant for use in sequential order to: 
 1 clean and format the original data extracted from primary articles for use in meta-analyses
-4-1 separate cases that include biodiversity and yield effect sizes
+4-1 separate cases that include biodiversity and yield effect sizes, and datasets needed for sensitivity analysis
 4-2 fit quantum regression models
 4-3 fit multinomial logit models
 4-4 fit meta-analytical models
 4-4 perform moderator analysis
 4-4 perform sensitivity analysis
+4-4 perform sub-analysis splitting data by biome
 
 The original data extracted from primary studies is available on request to the Curator. The cleaned dataset is available from Dataverse: https://doi.org/10.7910/DVN/XIDI1X
