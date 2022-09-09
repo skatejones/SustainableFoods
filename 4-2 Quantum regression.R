@@ -11,13 +11,34 @@ library(openxlsx)
 library(quantreg)
 library(qrLMM)
 
-wd <- readline() #at the prompt, copy and paste your filepath and press enter
-D:\02_Bioversity\30_SustainableFoods\R
+wd <- readline()
+#at the prompt, copy and paste your filepath and press enter
 setwd(wd)
 
 outpath <- "./Results_tradeoffs_wLER/"
 
 d <- read.xlsx(paste0(outpath,"Bio_yields_effects.xlsx"),sheet="d_bioyield")
+d_validity.high <- read.xlsx(paste0(outpath,"Bio_yields_effects.xlsx"),sheet="d_bioyield_validity")
+
+# from multinomial code...
+d <- reclassify(d)
+d_validity.high <- reclassify(d_validity.high)
+
+# split by biodiversity metric type
+d_abun <- d %>% filter(B_measure_group =="Abundance")
+d_rich <- d %>% filter(B_measure_group =="Richness")
+d_even <- d %>% filter(B_measure_group =="Richness-Evenness")
+
+# Quick plots
+ggplot(d,aes(y=yi_Y,x=System_T))+geom_boxplot()
+ggplot(d,aes(y=yi_Y,x=Lat_T))+geom_point()+geom_smooth()
+ggplot(d,aes(y=yi_Y,x=Long_T))+geom_point()+geom_smooth()
+ggplot(d,aes(y=yi_Y,x=Agrochem_CT))+geom_boxplot()
+ggplot(d,aes(y=yi_Y,x=yi_B))+geom_point()+geom_smooth()
+
+ggplot(d,aes(yi_Y,yi_B))+geom_point()+
+  geom_abline(intercept=exp(coef(qmodel)[1]),slope=coef(qmodel)[2])+
+  geom_smooth(method="lm",se=F)+theme_bw()
 
 # Relationship between yield and biodiversity ###
 
@@ -28,66 +49,60 @@ d <- read.xlsx(paste0(outpath,"Bio_yields_effects.xlsx"),sheet="d_bioyield")
 # https://www.statology.org/quantile-regression-in-r/ 
 # 50th percentile (median) is robust to outliers so can be better than linear regression (based on mean)
 
-ggplot(d,aes(y=yi_Y,x=System_T))+geom_boxplot()
-ggplot(d,aes(y=yi_Y,x=Lat_T))+geom_point()+geom_smooth()
-ggplot(d,aes(y=yi_Y,x=Long_T))+geom_point()+geom_smooth()
-ggplot(d,aes(y=yi_Y,x=Agrochem_CT))+geom_boxplot()
-
-ggplot(d,aes(y=yi_Y,x=yi_B))+geom_point()+geom_smooth()
-
-# run quantile regression without multi-level model (so don't use this, just for checking as is fast)
-qmodel <- rq(yi_Y~yi_B,data=d,tau=0.9)
-summary(qmodel)
-qmodel <- rq(yi_Y~yi_B,data=d,tau=0.1)
-summary(qmodel)
-qmodel <- rq(yi_Y~yi_B,data=d,tau=0.5)
-summary(qmodel)
-
 # interpreting results when dependent and independent variables are logarithms:
 # we interpret the coefficient as the expected change in percent in the dependent variable 
 # when the independent variable is increased by 1%
 # e.g. an increase in biodiversity of 1% is associated with an increase in yield by ##%.
 # https://www.stathelp.se/en/regression_logarithm_en.html
 
-# Including all intercropping data points:
-# 90th percentile of yield outcome  = exp(0.834)  -0.0309*biodiversity outcome - WEAK NEGATIVE
-# 50th percentile of yield outcome  = exp(0.095)  -0.038*biodiversity outcome -  WEAK NEGATIVE 
-# 10th percentile of yield outcome  = exp(-0.044)  -0.0086*biodiversity outcome -  WEAK NEGATIVE 
-# Means using the mean we find no relationship
-# using the median we find a very weak positive relationship
-
-# Including only LER intercropping data points:
-# 90th percentile of yield outcome  = exp(0.581)  -0.06725*biodiversity outcome -  WEAK NEGATIVE 
-# 50th percentile of yield outcome  = exp(0.465)  -0.0114*biodiversity outcome -  WEAK NEGATIVE
-# 10th percentile of yield outcome  = exp(-0.053)  -0.027*biodiversity outcome -  WEAK NEGATIVE 
-# Means using the mean we find no relationship
-# using the median we find a very weak positive relationship
-
-ggplot(d,aes(yi_Y,yi_B))+geom_point()+
-  geom_abline(intercept=exp(coef(qmodel)[1]),slope=coef(qmodel)[2])+
-  geom_smooth(method="lm",se=F)+theme_bw()
-
 # QRLMM package allows for mixed effects modelling with quantile regression
 # https://rdrr.io/cran/qrLMM/man/QRLMM.html
 # paper with results from this package: https://www.researchgate.net/publication/303811593_Quantile_regression_for_mixed-effects_models/figures
 
-d <- d %>% mutate(ID = as.factor(ID),Effect_ID=as.factor(Effect_ID))
-attach(d)
+# format random effects columns
+data <- d
+b_measure <- "Biodiversity"
+b_measure_short <- "Bio"
+
+data <- d_abun
+b_measure <- "Abundance"
+b_measure_short <- "Abun"
+
+data <- d_rich
+b_measure <- "Richness"
+b_measure_short <- "Rich"
+
+data <- d_even
+b_measure <- "Richness-Evenness"
+b_measure_short <- "RichEven"
+
+data <- d_validity.high
+b_measure <- "Biodiversity (HQ)"
+b_measure_short <- "Bio_HQ"
+
+data <- data %>% mutate(ID = as.factor(ID),Effect_ID=as.factor(Effect_ID))
+
+attach(data)
 
 y=yi_B # response
 x=cbind(1,yi_Y) # design matrix for fixed effects
 z=cbind(1,Effect_ID) # design matrix for random effects
-#groups <- rep(1,nrow(d)) 
+#groups <- rep(1,nrow(data)) 
 groups=ID
 qr_values <- seq(0.1,0.9,0.1)
 
-qmodel <- QRLMM(y=y,x=x,z=z,groups=groups,p=qr_values,show.convergence=TRUE,MaxIter=200,M=10)
-qmodel
+qmodel <- QRLMM(y=y,x=x,z=z,groups=groups,p=qr_values,show.convergence=TRUE,MaxIter=200,M=10) 
+# for Bio, says convergence not reached but graphically it is, processing time 8-12 mins. 
+# for Rich, says convergence not reached but graphically it is at about 50 iterations, processing time 2 mins.
+#qmodel <- QRLMM(y=y,x=x,z=z,groups=groups,p=qr_values,show.convergence=TRUE,MaxIter=500,M=20) # to try and reach convergence (see help)
+
+# save convergence plots for quantile 0.5
+
+summary(qmodel)
 check <- data.frame(t(qmodel[5][[1]]$res$beta))
 qmodel[5][[1]]$res$AIC
 qmodel[5][[1]]$res$BIC
 qmodel[5][[1]]$res$loglik
-
 
 qr_results <- data.frame(qmodel[1][[1]]$res$table) %>% mutate(quantile = 0.1)
 qr_results <- qr_results %>%
@@ -97,7 +112,8 @@ qr_results <- qr_results %>%
          loglik = qmodel[1][[1]]$res$loglik,sigma = qmodel[1][[1]]$res$sigma)
 
 for(i in c(2:9)){
-  qr_results_0 <- data.frame(qmodel[i][[1]]$res$table) %>% mutate(quantile = paste0("0.",i)) %>%
+  qr_results_0 <- data.frame(qmodel[i][[1]]$res$table) %>% mutate(quantile = paste0("0.",i))
+  qr_results_0 <- qr_results_0 %>%
     mutate(quantile = as.numeric(quantile)) %>%
     mutate(variable = rownames(qr_results_0)) %>%
     mutate(processing_time = qmodel[i][[1]]$res$time) %>%
@@ -105,20 +121,21 @@ for(i in c(2:9)){
            loglik = qmodel[i][[1]]$res$loglik,sigma = qmodel[i][[1]]$res$sigma) 
   qr_results <- rbind(qr_results,qr_results_0)}
 
-write.xlsx(qr_results,file=paste0(outpath,"qr results.xlsx"),overwrite=TRUE)
+assign(paste0("qr_results_",b_measure_short),qr_results)
 
 # for a list of quantiles, the result is a list of the same dimension where 
 # each element corresponds to each quantile as detailed above.  
 
 # Model results: 
 
-# On figures, beta 1 (b1) represents the coefficients for the fixed effects (biodiversity response) 
+# On figures, beta 0 is the intercept, 
+# beta 1 (b1) represents the coefficients for the fixed effects (yield) 
 # so is the most important graph
 # Beta 2 (b2) represents coefficients for the random effects (effect ID)
 # sigma represents standard errors for all parameters
 # [export figures manually with height=500, width=800, name Fig X quan reg...]
 
-beta <- qmodel[5][1]$res$beta  #fixed effects
+beta <- qmodel[5][[1]]$res$beta  #fixed effects
 weights = qmodel[5][1]$res$weights  #random weights
 nj = c(as.data.frame(table(groups))[,2]) #obs per subject
 fixed = tcrossprod(x,t(beta))
@@ -135,13 +152,15 @@ group.plot(yi_Y,pred,groups,type = "l",xlab="Yields",ylab="Biodiversity")
 group.points(yi_Y,yi_B,groups)
 #colnames(pred) = c("yi_B_pred")
 #qmodel.pred <- data.frame(pred) %>% cbind(yi_Y)
+
 col.quantiles <- c("0.1"= "grey85","0.2" = "grey80","0.3" =  "grey75","0.4"= "grey70","0.5"= "orange",
                    "0.6" =  "grey65","0.7"= "grey60","0.8" = "grey55","0.9" = "grey50","Mean"= "blue")
-g <- ggplot(d,aes(x=yi_Y,y=yi_B))+geom_point(pch=1)+
-  labs(x="Yield RR",y="Biodiversity RR")+
+
+g <- ggplot(data,aes(x=yi_Y,y=yi_B))+geom_point(pch=1)+
+  labs(x="Yield RR",y=paste0(b_measure," RR"))+
   geom_smooth(formula=y~x,method="lm",se=F,aes(colour="Mean"),size=0.8)+
+  geom_text(aes(x=1.5,y=6, label=paste0("y = ",round(qmodel[[5]]$res$beta[1,1],2),round((slope=qmodel[[5]]$res$beta[2,1]),2),"x, p = ",round(qmodel[[5]]$res$table$`Pr(>|z|)`[2],4)),colour="0.5"),size=3.5,show.legend=FALSE)+
   geom_abline(aes(intercept=qmodel[[1]]$res$beta[1,1], slope=qmodel[[1]]$res$beta[2,1],colour="0.1"),size=0.5,show.legend=FALSE)+
-  #geom_text(aes(x=-3,y=qmodel[[1]]$res$beta[1,1], label=c("0.1")))+
   geom_abline(aes(intercept=qmodel[[2]]$res$beta[1,1], slope=qmodel[[2]]$res$beta[2,1],colour="0.2"),size=0.5,show.legend=FALSE)+
   geom_abline(aes(intercept=qmodel[[3]]$res$beta[1,1], slope=qmodel[[3]]$res$beta[2,1],colour="0.3"),size=0.5,show.legend=FALSE)+
   geom_abline(aes(intercept=qmodel[[4]]$res$beta[1,1], slope=qmodel[[4]]$res$beta[2,1],colour="0.4"),size=0.5,show.legend=FALSE)+
@@ -155,7 +174,8 @@ g <- ggplot(d,aes(x=yi_Y,y=yi_B))+geom_point(pch=1)+
   theme(text=element_text(size=10))
 g
 
-tiff(paste0(outpath,"Quantile regression curves.tif"),width=6,height=4,units="in",res=300,compression="lzw")
+
+tiff(paste0(outpath,"Quantile regression curves ",b_measure_short,".tif"),width=6,height=4,units="in",res=300,compression="lzw")
 g
 dev.off()
 
@@ -164,15 +184,119 @@ g <- ggplot(qr_results,aes(x=quantile,y=Estimate,group=variable,ymin=`Inf.CI95.`
   geom_point(pch=1)+
   #geom_path()+
   geom_smooth(colour="black")+
-  labs(y="Estimate",x="Quantiles")+
+  labs(y="Estimate",x="Yield quantiles")+
   scale_x_continuous(breaks=seq(0.1,0.9,0.1))+
-  facet_grid(~variable)+
+  facet_grid(cols=vars(variable))+
   theme_bw()+
   theme(panel.grid.minor=element_blank())
 g
 
-tiff(paste0(outpath,"Quantile regression point estimates.tif"),width=6,height=4,units="in",res=300,compression="lzw")
+tiff(paste0(outpath,"Quantile regression point estimates ",b_measure_short,".tif"),width=6,height=4,units="in",res=300,compression="lzw")
 g
 dev.off()
 
-detach(d)
+detach(data)
+
+write.xlsx(list(qr_results_Bio,
+                  qr_results_Abun,
+                  qr_results_Rich,
+                  qr_results_RichEven),
+           file=paste0(outpath,"qr results.xlsx"),overwrite=TRUE)
+write.xlsx(list(qr_results_Bio_HQ),
+           file=paste0(outpath,"qr results_HQ.xlsx"),overwrite=TRUE)
+
+### Make one figure with regression curves for all metrics ####
+
+qr_results_Bio <- read.xlsx(paste0(outpath,"qr results.xlsx"),sheet=1)
+qr_results_Abun <- read.xlsx(paste0(outpath,"qr results.xlsx"),sheet=2)
+qr_results_Rich <- read.xlsx(paste0(outpath,"qr results.xlsx"),sheet=3)
+qr_results_RichEven <- read.xlsx(paste0(outpath,"qr results.xlsx"),sheet=4)
+qr_results_Bio_HQ <- read.xlsx(paste0(outpath,"qr results_HQ.xlsx"),sheet=4)
+
+qr_results_all <- qr_results_Bio %>% mutate(B_measure = "Biodiversity") %>%
+  rbind(
+    qr_results_Abun %>% mutate(B_measure = "Abundance")) %>%
+  rbind(
+    qr_results_Rich %>% mutate(B_measure = "Richness")) %>%
+  rbind(
+    qr_results_RichEven %>% mutate(B_measure = "Richness-Evenness")) 
+
+g <- ggplot(qr_results_all,aes(x=quantile,y=Estimate,group=variable,ymin=`Inf.CI95.`,ymax=`Sup.CI95.`,se=`Std..Error`))+
+  geom_hline(yintercept=0)+
+  geom_point(pch=1)+
+  #geom_path()+
+  geom_smooth(colour="black",size=0.5)+
+  labs(y="Estimate",x="Yield quantiles")+
+  scale_x_continuous(breaks=seq(0.1,0.9,0.4))+
+  facet_grid(rows=vars(factor(B_measure,levels=c("Biodiversity","Abundance","Richness","Richness-Evenness","Biodiversity (HQ)"))),
+             cols=vars(variable))+
+  theme_bw()+
+  theme(text=element_text(size=10,colour="black"),
+        axis.title=element_text(size=10,colour="black"),
+        axis.text=element_text(size=10,colour="black"),
+        panel.grid.minor=element_blank(),
+        panel.spacing=unit(0.7,"lines"),
+        strip.background=element_blank(),
+        strip.text=element_text(face="bold",size=10))
+g
+
+gb <- ggplot_build(g)
+lay <- gb$layout$layout %>% mutate(B_measure = `factor(...)`)
+tags <- cbind(lay, label = paste0(LETTERS[lay$PANEL]), x = -Inf, y = Inf)
+tags <- cbind(lay,label=c("Ai","Aii", "Bi","Bii","Ci","Cii","Di","Dii"),x=-Inf,y=Inf)
+g <- g + geom_text(data = tags, aes_string(x = "x", y = "y", label = "label"), hjust = -0.5, 
+              vjust = 1.5, fontface = "bold",size=3.5, inherit.aes = FALSE) 
+g
+
+tiff(paste0(outpath,"Quantile regression point estimates all.tif"),width=7,height=6.5,units="in",res=500,compression="lzw")
+g
+dev.off()
+
+# Alternative code for quantile regression slopes using exported data ####
+
+qr_results <- qr_results_Bio %>% mutate(B_measure = "Biodiversity") %>%
+  mutate(p.value = ifelse(`Pr...z..`<0.001,"< 0.001",paste0(" = ",round(`Pr...z..`,3))))
+
+qr_results <- qr_results_Abun %>% mutate(B_measure = "Abundance") %>%
+  mutate(p.value = ifelse(`Pr...z..`<0.001,"< 0.001",paste0(" = ",round(`Pr...z..`,3))))
+
+qr_results <- qr_results_Rich %>% mutate(B_measure = "Richness") %>%
+  mutate(p.value = ifelse(`Pr...z..`<0.001,"< 0.001",paste0(" = ",round(`Pr...z..`,3))))
+
+qr_results <- qr_results_RichEven %>% mutate(B_measure = "Richness-Evenness") %>%
+  mutate(p.value = ifelse(`Pr...z..`<0.001,"< 0.001",paste0(" = ",round(`Pr...z..`,3))))
+
+qr_results <- qr_results_Bio_HQ %>% mutate(B_measure = "Biodiversity (HQ)") %>%
+  mutate(p.value = ifelse(`Pr...z..`<0.001,"< 0.001",paste0(" = ",round(`Pr...z..`,3))))
+
+g <- ggplot(d,aes(x=yi_Y,y=yi_B))+geom_point(pch=1)+
+  labs(x="Yield RR",y=paste0(qr_results$B_measure," RR"))+
+  geom_smooth(formula=y~x,method="lm",se=F,aes(colour="Mean"),size=0.8)+
+  #geom_text(aes(x=1.3,y=8, label=paste0("y = ",round(qr_results[which(qr_results$quantile==0.1 & qr_results$variable =="beta 1"),]$Estimate,2)," + ",round((slope=qr_results[which(qr_results$quantile==0.1 & qr_results$variable =="beta 2"),]$Estimate),2),"x, p = ",qr_results[which(qr_results$quantile==0.1 & qr_results$variable =="beta 2"),]$p.value),colour="0.1"),size=3.5,show.legend=FALSE)+
+  #geom_text(aes(x=1.3,y=7, label=paste0("y = ",round(qr_results[which(qr_results$quantile==0.2 & qr_results$variable =="beta 1"),]$Estimate,2)," + ",round((slope=qr_results[which(qr_results$quantile==0.2 & qr_results$variable =="beta 2"),]$Estimate),2),"x, p = ",qr_results[which(qr_results$quantile==0.2 & qr_results$variable =="beta 2"),]$p.value),colour="0.2"),size=3.5,show.legend=FALSE)+
+  #geom_text(aes(x=1.3,y=6, label=paste0("y = ",round(qr_results[which(qr_results$quantile==0.3 & qr_results$variable =="beta 1"),]$Estimate,2)," + ",round((slope=qr_results[which(qr_results$quantile==0.3 & qr_results$variable =="beta 2"),]$Estimate),2),"x, p = ",qr_results[which(qr_results$quantile==0.3 & qr_results$variable =="beta 2"),]$p.value),colour="0.3"),size=3.5,show.legend=FALSE)+
+  #geom_text(aes(x=1.3,y=5, label=paste0("y = ",round(qr_results[which(qr_results$quantile==0.4 & qr_results$variable =="beta 1"),]$Estimate,2)," + ",round((slope=qr_results[which(qr_results$quantile==0.4 & qr_results$variable =="beta 2"),]$Estimate),2),"x, p = ",qr_results[which(qr_results$quantile==0.4 & qr_results$variable =="beta 2"),]$p.value),colour="0.4"),size=3.5,show.legend=FALSE)+
+  geom_text(aes(x=1.1,y=8, label=paste0("y = ",round(qr_results[which(qr_results$quantile==0.5 & qr_results$variable =="beta 1"),]$Estimate,3)," + ",round((slope=qr_results[which(qr_results$quantile==0.5 & qr_results$variable =="beta 2"),]$Estimate),2),"x, p ",qr_results[which(qr_results$quantile==0.5 & qr_results$variable =="beta 2"),]$p.value),colour="0.5"),size=3.5,show.legend=FALSE)+
+  #geom_text(aes(x=1.3,y=-6, label=paste0("y = ",round(qr_results[which(qr_results$quantile==0.6 & qr_results$variable =="beta 1"),]$Estimate,2)," + ",round((slope=qr_results[which(qr_results$quantile==0.6 & qr_results$variable =="beta 2"),]$Estimate),2),"x, p = ",qr_results[which(qr_results$quantile==0.6 & qr_results$variable =="beta 2"),]$p.value),colour="0.6"),size=3.5,show.legend=FALSE)+
+  #geom_text(aes(x=1.3,y=-7, label=paste0("y = ",round(qr_results[which(qr_results$quantile==0.7 & qr_results$variable =="beta 1"),]$Estimate,2)," + ",round((slope=qr_results[which(qr_results$quantile==0.7 & qr_results$variable =="beta 2"),]$Estimate),2),"x, p = ",qr_results[which(qr_results$quantile==0.7 & qr_results$variable =="beta 2"),]$p.value),colour="0.7"),size=3.5,show.legend=FALSE)+
+  #geom_text(aes(x=1.3,y=-8, label=paste0("y = ",round(qr_results[which(qr_results$quantile==0.8 & qr_results$variable =="beta 1"),]$Estimate,2)," + ",round((slope=qr_results[which(qr_results$quantile==0.8 & qr_results$variable =="beta 2"),]$Estimate),2),"x, p = ",qr_results[which(qr_results$quantile==0.8 & qr_results$variable =="beta 2"),]$p.value),colour="0.8"),size=3.5,show.legend=FALSE)+
+  #geom_text(aes(x=1.3,y=-9, label=paste0("y = ",round(qr_results[which(qr_results$quantile==0.9 & qr_results$variable =="beta 1"),]$Estimate,2)," + ",round((slope=qr_results[which(qr_results$quantile==0.9 & qr_results$variable =="beta 2"),]$Estimate),2),"x, p = ",qr_results[which(qr_results$quantile==0.9 & qr_results$variable =="beta 2"),]$p.value),colour="0.9"),size=3.5,show.legend=FALSE)+
+  geom_abline(aes(intercept=qr_results[which(qr_results$quantile==0.1 & qr_results$variable =="beta 1"),]$Estimate, slope=qr_results[which(qr_results$quantile==0.1 & qr_results$variable =="beta 2"),]$Estimate,colour="0.1"),size=0.5,show.legend=FALSE)+
+  geom_abline(aes(intercept=qr_results[which(qr_results$quantile==0.2 & qr_results$variable =="beta 1"),]$Estimate, slope=qr_results[which(qr_results$quantile==0.2 & qr_results$variable =="beta 2"),]$Estimate,colour="0.2"),size=0.5,show.legend=FALSE)+
+  geom_abline(aes(intercept=qr_results[which(qr_results$quantile==0.3 & qr_results$variable =="beta 1"),]$Estimate, slope=qr_results[which(qr_results$quantile==0.3 & qr_results$variable =="beta 2"),]$Estimate,colour="0.3"),size=0.5,show.legend=FALSE)+
+  geom_abline(aes(intercept=qr_results[which(qr_results$quantile==0.4 & qr_results$variable =="beta 1"),]$Estimate, slope=qr_results[which(qr_results$quantile==0.4 & qr_results$variable =="beta 2"),]$Estimate,colour="0.4"),size=0.5,show.legend=FALSE)+
+  geom_abline(aes(intercept=qr_results[which(qr_results$quantile==0.5 & qr_results$variable =="beta 1"),]$Estimate, slope=qr_results[which(qr_results$quantile==0.5 & qr_results$variable =="beta 2"),]$Estimate,colour="0.5"),size=0.8,show.legend=FALSE)+
+  geom_abline(aes(intercept=qr_results[which(qr_results$quantile==0.6 & qr_results$variable =="beta 1"),]$Estimate, slope=qr_results[which(qr_results$quantile==0.6 & qr_results$variable =="beta 2"),]$Estimate,colour="0.6"),size=0.5,show.legend=FALSE)+
+  geom_abline(aes(intercept=qr_results[which(qr_results$quantile==0.7 & qr_results$variable =="beta 1"),]$Estimate, slope=qr_results[which(qr_results$quantile==0.7 & qr_results$variable =="beta 2"),]$Estimate,colour="0.7"),size=0.5,show.legend=FALSE)+
+  geom_abline(aes(intercept=qr_results[which(qr_results$quantile==0.8 & qr_results$variable =="beta 1"),]$Estimate, slope=qr_results[which(qr_results$quantile==0.8 & qr_results$variable =="beta 2"),]$Estimate,colour="0.8"),size=0.5,show.legend=FALSE)+
+  geom_abline(aes(intercept=qr_results[which(qr_results$quantile==0.9 & qr_results$variable =="beta 1"),]$Estimate, slope=qr_results[which(qr_results$quantile==0.9 & qr_results$variable =="beta 2"),]$Estimate,colour="0.9"),size=0.5,show.legend=FALSE)+
+  
+  scale_colour_manual(name="Quantiles",values=col.quantiles)+
+  theme_classic()+
+  theme(text=element_text(size=10))
+g
+
+tiff(paste0(outpath,"Quantile regression point estimates ",qr_results$B_measure,".tif"),width=6,height=3.5,units="in",res=300,compression="lzw")
+g
+dev.off()
+

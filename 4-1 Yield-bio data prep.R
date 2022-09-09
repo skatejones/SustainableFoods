@@ -31,17 +31,18 @@ library(dunn.test)
 library(car)
 library("report") # nice model summaries
 library(foreign) # for reading dbase files
+library(ggpubr) # ggarrange
+library(ggallin)
 
-wd <- readline() #at the prompt, copy and paste your filepath and press enter
-D:\02_Bioversity\30_SustainableFoods\R
+wd <- readline()
+#at the prompt, copy and paste your filepath and press enter
 setwd(wd)
 
 run <- "DIVSIM_yields"
 outpath <- "./Results_tradeoffs_wLER/"
 
 col.intervention = c("navy","forestgreen", "seagreen","gold","orange", "lightblue","purple")
-col.synergies = c("steelblue","gold","orange","forestgreen")
-col.synergies = c("#225ea8","#41b6c4","#a1dab4","#74c476") # "#ffffcc, "#238b45"
+col.synergies = c("Lose B-Lose Y" = "navy","Other"="grey50", "Win B-Win Y"= "forestgreen", "Win B-Lose Y" ="gold","Lose B-Win Y"= "lightblue")
 
 # Import data ####
 # Info on ID columns:
@@ -71,11 +72,20 @@ transf = function(x){
   return((exp(x)-1)*100)
 }
 
+# correct error in 1036 comparison ID_T column
+d_full <- d_full %>%
+  mutate(Comparison_ID_T = ifelse(ID == "1036" & System_details_T == "S18: 18 months tree growth with Sesbania fallow","T3",
+                                  ifelse(ID == "1036" & System_details_T == "N18: 18 months natural regrowth of vegetation fallow without cultivation","T4",Comparison_ID_T)))
+d_full <- d_full %>% 
+  mutate(C_T_ID = paste0(Comparison_ID_C,"_",Comparison_ID_T),
+         Experiment_stage = ifelse(is.na(Experiment_stage),99,as.numeric(Experiment_stage))) %>%
+  select(ID,C_T_ID,Experiment_stage,System_C,System_details_C,System_T,System_details_T, everything())
+
 # Format data for analysis ####
-data = d_full
-data = d_bio_divsim
+
 data_formating = function(data,name,run=0,zeros=0,outcome="bio_yield"){
   
+
   if(outcome %in% c("yield","bio_yield")){
     # remove rows that have no yield data
     data <- data %>% filter(Yield_data==1)
@@ -89,17 +99,17 @@ data_formating = function(data,name,run=0,zeros=0,outcome="bio_yield"){
   }
   if(zeros!="keep_zeros"){
     if(outcome %in% c("bio","bio_yield")){
-      # Add 0.0001 to zeros to allow their inclusion
-      data$B_value_C[data$B_value_C == 0] <- 0.0001
-      data$B_SD_C[data$B_SD_C == 0] <- 0.0001
-      data$B_value_T[data$B_value_T == 0] <- 0.0001
-      data$B_SD_T[data$B_SD_T == 0] <- 0.0001
+      # Add small increment to zeros to allow their inclusion
+      data$B_value_C[data$B_value_C == 0] <- 0.01
+      data$B_SD_C[data$B_SD_C == 0] <- 0.01
+      data$B_value_T[data$B_value_T == 0] <- 0.01
+      data$B_SD_T[data$B_SD_T == 0] <- 0.01
     }
     if(outcome %in% c("yield","bio_yield")){
-      data$Yield_value_C[data$Yield_value_C == 0] <- 0.0001
-      data$Yield_SD_C[data$Yield_SD_C == 0] <- 0.0001
-      data$Yield_value_T[data$Yield_value_T == 0] <- 0.0001
-      data$Yield_SD_T[data$Yield_SD_T == 0] <- 0.0001
+      data$Yield_value_C[data$Yield_value_C == 0] <- 0.01
+      data$Yield_SD_C[data$Yield_SD_C == 0] <- 0.01
+      data$Yield_value_T[data$Yield_value_T == 0] <- 0.01
+      data$Yield_SD_T[data$Yield_SD_T == 0] <- 0.01
     }
   }
   
@@ -109,13 +119,19 @@ data_formating = function(data,name,run=0,zeros=0,outcome="bio_yield"){
   #unique(data$BIOME_NAME)
   #check <- data %>% filter(is.na(BIOME_NAME)) %>% select(Merge_ID,Lat_C,Long_C,Lat_T,Long_T,Country,BIOME_NAME)
   
-  # Not all the biodiversity metrics are present in the yield-bio dataset - check classes
+  # Not all the biodiversity metrics are present in the yield-bio dataset
   #addmargins(table(data$B_measure_group))
   #freq(data$B_measure)
   if(outcome %in% c("bio_yield","bio")){
     data <- data %>% mutate(B_measure_group = ifelse(B_measure %in% c("Activity-density","Abundance","Vistitation frequency"),"Abundance",
                                                      ifelse(B_measure %in% c("Species Richness"),"Richness",
                                                             ifelse(B_measure %in%  c("Species Eveness ","Shannon Eveness Index", "Shannon Index" , "Shannon Index " ,   "Shannon-Wiener Index"),"Shannon diversity","Other")))) 
+    
+        data <- data %>% mutate(B_measure_group = ifelse(B_measure %in% c("Abundance", "Activity-density", "Area under disease progress curve (AUDPC)",
+                                                                      "Colonization Percent","Colonization Percent ", "Vistitation frequency"),"Abundance",
+                                                     ifelse(B_measure %in% c("Chao1 Index","Species Richness"),"Richness",
+                                                            ifelse(B_measure %in% c("Pielou Index","Shannon-Wiener Index","Shannon Index","Shannon Index ","Species Eveness","Species Eveness ","Simpson Index","Simpson Index "),"Richness-Evenness",B_measure))))
+    
     #freq(data$B_measure_group)
     #table(data$B_measure,data$B_measure_group)
     #check <- data %>% filter(B_measure =="Area under disease progress curve (AUDPC)")
@@ -315,6 +331,8 @@ data_formating = function(data,name,run=0,zeros=0,outcome="bio_yield"){
   #table(data$Crop_FAO_C)
   data <- data %>%
     mutate(Crop_FAO_C = ifelse(Crop_FAO_C %in% c("Nuts","Stimulants"),"Nuts/Stimulants",Crop_FAO_C))
+  data <- data %>%
+    mutate(Crop_FAO_T = ifelse(Crop_FAO_T %in% c("Nuts","Stimulants"),"Nuts/Stimulants",Crop_FAO_T))
   
   data <- data %>%
     mutate(Crop_FAO_C_extra = ifelse(Crop_ann_pen_C == "Perennial" & Crop_woodiness_C %in% c("Liana","Shrub"), paste0(Crop_FAO_C," (","Perennial Shrub/Liana)"),
@@ -324,8 +342,8 @@ data_formating = function(data,name,run=0,zeros=0,outcome="bio_yield"){
   
   data <- data %>%
     mutate(Crop_FAO_CT = ifelse(Crop_FAO_C==Crop_FAO_T,Crop_FAO_C,
-                                ifelse(Crop_FAO_C == "Cereals","Cereals - Other" ,"Mixed"))) %>%
-    mutate(Crop_FAO_CT = ifelse(Crop_FAO_CT %in% c("Stimulants","Nuts"),"Nuts/Stimulants",Crop_FAO_CT))
+                                ifelse(Crop_FAO_C == "Cereals","Cereals - Other" ,"Mixed")))
+  
   #table(data$Crop_FAO_C)
   #table(data$Crop_FAO_C,data$Crop_FAO_T)
   #table(data$Crop_FAO_C,data$System_T)
@@ -396,9 +414,6 @@ data_formating = function(data,name,run=0,zeros=0,outcome="bio_yield"){
   data <- data %>%
     mutate(Crop_type_C = ifelse(Crop_type_C == "Mixed or nd Herb" & Crop_T == "Wheat-Alfalfa","Annual Herb",Crop_type_C))
   
-  #table(data$Crop_type_CT,data$Crop_type_C)
-  #table(data$Agrochem_CT) # no data = 99 (wLER) or 194 (full dataset)
-  
   # Add potential random effects columns ####
   # make unique identifier for shared controls or treatments
   #data <- data %>% 
@@ -437,48 +452,54 @@ data_formating = function(data,name,run=0,zeros=0,outcome="bio_yield"){
   data$Taxa_group_simp <- fct_relevel(data$Taxa_group_simp,"Invertebrates")
 
   # Remove unnecessary columns####
+  #names(data)
   if(outcome %in% c("yield")){
     
     data <- data %>% 
       mutate(se_Y = sqrt(vi_Y)) %>% mutate(ci.lb_Y=yi_Y-1.96*se_Y,ci.ub_Y=yi_Y+1.96*se_Y)
     
     data <- data %>% select(ID,Comparison_ID_C,Comparison_ID_T,
+                            Yield_value_C,Yield_SD_C,Yield_N_C,Yield_value_T,Yield_SD_T,Yield_N_T,
                             yi_Y,vi_Y,se_Y,ci.lb_Y,ci.ub_Y, 
-                            #Crop_type_CT,Crop_FAO_CT,Crop_FAO_CT_extra,Crop_ann_pen_C_action,Crop_woodiness_C_action,
-                            Crop_C,Crop_T,Crop_FAO_C,Crop_type_C,Crop_ann_pen_C,Crop_woodiness_C, 
-                            System_C,System_details_C,System_T,System_T_action,System_details_T, 
-                            Agrochem_CT,Pesticide_CT,Fertiliser_CT,
-                            Yield_measure_group,
-                            DevelopmentStatus,Region.Name,Sub.region.Name, Continent,BIOME_NAME,Biome,
+                            System_C,System_details_C,System_T,System_details_T, System_T_action,
+                            Crop_C,Crop_T,Crop_FAO_C,Crop_type_C,Crop_ann_pen_C,Crop_woodiness_C, Crop_FAO_T,Crop_ann_pen_T,Crop_woodiness_T, 
+                            Crop_type_CT,Crop_FAO_CT,#Crop_FAO_CT_extra,Crop_ann_pen_C_action,Crop_woodiness_C_action,
+                            Agrochem_CT,Pesticide_CT,Fertiliser_CT,Tillage_CT,Time_state_C,Time_state_T,Farm_size,
+                            Yield_measure,Yield_measure_group,
+                            DevelopmentStatus,Region.Name,Sub.region.Name, Continent,BIOME_NAME,Biome,Biome_simp,
                             Lat_original_C,Long_original_C,Lat_original_T,Long_original_T,Lat_C,Long_C,Lat_T,Long_T,
                             Country,
                             #ID_C_yield,ID_T_yield,
-                            Validity_yield_overall,Validity_biodiversity_overall,
+                            Validity_yield_overall,
                             Validity_location,
                             Validity_N_yield_C,Validity_N_yield_T,
-                            Validity_time_C,Validity_time_T) %>% unique()
+                            Validity_time_C,Validity_time_T,
+                            Authors,Title,Year) %>% unique()
     
   }
+
   if(outcome %in% c("bio")){
     data <- data %>% 
       mutate(se_B = sqrt(vi_B)) %>% mutate(ci.lb_B=yi_B-1.96*se_B,ci.ub_B=yi_B+1.96*se_B)
     
-    data <- data %>% select(ID,Effect_ID, Comparison_ID_C,Comparison_ID_T,
+    data <- data %>% select(ID,Effect_ID, Comparison_ID_C,Comparison_ID_T,Experiment_stage,
+                            B_value_C,B_SD_C,B_N_C,B_value_T,B_SD_T,B_N_T,
                             yi_B,vi_B,se_B,ci.lb_B,ci.ub_B,
-                            #Crop_type_CT,Crop_FAO_CT,Crop_FAO_CT_extra,Crop_ann_pen_C_action,Crop_woodiness_C_action,
-                            Crop_C,Crop_T,Crop_FAO_C,Crop_type_C,Crop_ann_pen_C,Crop_woodiness_C, 
-                            System_C,System_details_C,System_T,System_T_action,System_details_T, 
-                            Agrochem_CT,Pesticide_CT,Fertiliser_CT,
+                            System_C,System_details_C,System_T,System_details_T, System_T_action,
+                            Crop_C,Crop_T,Crop_FAO_C,Crop_type_C,Crop_ann_pen_C,Crop_woodiness_C, Crop_FAO_T,Crop_ann_pen_T,Crop_woodiness_T, 
+                            Crop_type_CT,Crop_FAO_CT,#Crop_FAO_CT_extra,Crop_ann_pen_C_action,Crop_woodiness_C_action,
+                            Agrochem_CT,Pesticide_CT,Fertiliser_CT,Tillage_CT,Time_state_C,Time_state_T,Farm_size,
                             Taxa_group,Taxa_class,Taxa_order,Taxa_details,#Taxa_group_map
-                            B_measure_group,B_ground,Pest_group,
-                            DevelopmentStatus,Region.Name,Sub.region.Name, Continent,BIOME_NAME,Biome,
+                            B_measure,B_measure_group,B_ground,Pest_group,
+                            DevelopmentStatus,Region.Name,Sub.region.Name, Continent,BIOME_NAME,Biome,Biome_simp,
                             Lat_original_C,Long_original_C,Lat_original_T,Long_original_T,Lat_C,Long_C,Lat_T,Long_T,
                             Country,
                             #ID_C_bio,ID_T_bio,ID_CT_bio
                             Validity_biodiversity_overall,
                             Validity_location,
                             Validity_N_biodiversity_C,Validity_N_biodiversity_T,
-                            Validity_time_C,Validity_time_T)
+                            Validity_time_C,Validity_time_T,
+                            Authors,Title,Year)
     
   }
   
@@ -495,23 +516,34 @@ data_formating = function(data,name,run=0,zeros=0,outcome="bio_yield"){
                                                                 ifelse((yi_B<0 & ci.ub_B<0) & (yi_Y<0 & ci.ub_Y<0),"Lose B-Lose Y",
                                                                        ifelse((yi_B<0 & ci.ub_B<0) & (yi_Y<=0 & ci.ub_Y>0),"Lose B-Equiv Y",
                                                                               ifelse((yi_B<=0 & ci.ub_B>0) & (yi_Y<0 & ci.ub_Y<0),"Equiv B-Lose Y","Equiv B-Equiv Y"))))))))) %>%
+      mutate(Synergies_withEquiv = ifelse(yi_B >0 & yi_Y >0,"Win B-Win Y",
+                                          ifelse(yi_B>0 & yi_Y<0,"Win B-Lose Y",
+                                                 ifelse(yi_B>0 & yi_Y==0,"Win B-Equiv Y",
+                                                        ifelse(yi_B<0 & yi_Y >0,"Lose B-Win Y",
+                                                               ifelse(yi_B<0 & yi_Y == 0,"Lose B-Equiv Y",
+                                                                      ifelse(yi_B==0 & yi_Y>0,"Equiv B-Win Y",
+                                                                             ifelse(yi_B==0 & yi_Y<0,"Equiv B-Lose Y",
+                                                                                    ifelse(yi_B==0 & yi_Y==0,"Equiv B-Equiv Y",
+                                                                                           ifelse(yi_B<0 & yi_Y<0,"Lose B-Lose Y","check")))))))))) %>%
       mutate(Synergies_sig_simp = ifelse(Synergies_sig %in% c("Win B-Equiv Y"  , "Equiv B-Win Y" ,  "Win B-Win Y"),"Win B-Win Y",
                                          ifelse(Synergies_sig %in% c("Lose B-Lose Y" ,"Lose B-Equiv Y" , "Equiv B-Lose Y" ), "Lose B-Lose Y",Synergies_sig))) %>%
       mutate(Synergies_sig_binary = ifelse(((yi_B >0 & ci.lb_B>0) | (yi_B <0 & ci.ub_B<0)) & ((yi_Y >0 & ci.lb_Y>0)|(yi_Y<0 & ci.ub_Y<0)),1,0 ))
     
     
-    data <- data %>% select(ID,Effect_ID,Comparison_ID_C,Comparison_ID_T,
+    data <- data %>% select(ID,Effect_ID,Comparison_ID_C,Comparison_ID_T,Experiment_stage,
+                            B_value_C,B_SD_C,B_N_C,B_value_T,B_SD_T,B_N_T,
+                            Yield_value_C,Yield_SD_C,Yield_N_C,Yield_value_T,Yield_SD_T,Yield_N_T,
                             yi_Y,vi_Y,se_Y,ci.lb_Y,ci.ub_Y, yi_Y_pc, 
                             yi_B,vi_B,se_B,ci.lb_B,ci.ub_B,yi_B_pc,
                             Synergies,Synergies_sig,
-                            #Crop_type_CT,Crop_FAO_CT,Crop_FAO_CT_extra, Crop_ann_pen_C_action,Crop_woodiness_C_action,
-                            Crop_C,Crop_T,Crop_FAO_C,Crop_type_C,Crop_ann_pen_C,Crop_woodiness_C, 
-                            System_C,System_details_C,System_T,System_T_action,System_details_T, 
-                            Agrochem_CT,Pesticide_CT,Fertiliser_CT,
+                            System_C,System_details_C,System_T,System_details_T,System_T_action, 
+                            Crop_C,Crop_T,Crop_FAO_C,Crop_type_C,Crop_ann_pen_C,Crop_woodiness_C, Crop_FAO_T,Crop_ann_pen_T,Crop_woodiness_T, 
+                            Crop_type_CT,Crop_FAO_CT,#Crop_FAO_CT_extra,Crop_ann_pen_C_action,Crop_woodiness_C_action,
+                            Agrochem_CT,Pesticide_CT,Fertiliser_CT,Tillage_CT,Time_state_C,Time_state_T,Farm_size,
                             Taxa_group,Taxa_class,Taxa_order,Taxa_details, #Taxa_group_map,
-                            B_measure_group,B_ground,Pest_group,
-                            Yield_measure_group,
-                            DevelopmentStatus,Region.Name,Sub.region.Name, Continent,BIOME_NAME,Biome,
+                            B_measure,B_measure_group,B_ground,Pest_group,
+                            Yield_measure,Yield_measure_group,
+                            DevelopmentStatus,Region.Name,Sub.region.Name, Continent,BIOME_NAME,Biome,Biome_simp,
                             Lat_original_C,Long_original_C,Lat_original_T,Long_original_T,Lat_C,Long_C,Lat_T,Long_T,
                             Country,
                             # ID_C_bio,ID_T_bio,ID_C_yield,ID_T_yield,ID_CT_bio
@@ -519,7 +551,8 @@ data_formating = function(data,name,run=0,zeros=0,outcome="bio_yield"){
                             Validity_location,
                             Validity_N_yield_C,Validity_N_yield_T,
                             Validity_N_biodiversity_C,Validity_N_biodiversity_T,
-                            Validity_time_C,Validity_time_T)
+                            Validity_time_C,Validity_time_T,
+                            Authors,Title,Year)
     
   }
   
@@ -632,6 +665,7 @@ write.xlsx(list("d_full" = d_full,
                 "d_bioyield_zeros" = d_bioyield_zeros,
                 "d_bioyield_validity" = d_bioyield_validity.high,
                 "d_yield" = d_yield, 
+                "d_yield_LERplus" = d_yield_LERplus, 
                 "d_yield_zeros" = d_yield_zeros,
                 "d_yield_validity" = d_yield_validity.high),
            #d_validity.location.high,d_validity.N.high,d_validity.time.high),
@@ -684,27 +718,162 @@ ggplot(d_freq,aes(x=Synergies,y=reorder(Crop_T,desc(Crop_T)),size=Freq,colour=Sy
 
 ggsave(paste0(outpath,"Fig yield biodiversity synergies by crop and intervention.tif"),device="tiff",dpi=150)
 
+addmargins(table(d_yield$Validity_yield_overall))
+
+addmargins(table(d_bioyield$Validity_location))
+addmargins(table(d_bioyield$Validity_time_T,d_bioyield$Validity_time_C))
+addmargins(table(d_bioyield$Validity_N_biodiversity_C,d_bioyield$Validity_N_biodiversity_T))
+
+addmargins(table(d_bioyield$Region.Name))
+prop.table(table(d_bioyield$Region.Name))
+prop.table(table(d_bioyield$Sub.region.Name))
+
 ### Scatterplot with four quadrants showing outcomes per diversification system ####
+
 labels <- labels_d_bioyield
-g <- ggplot(d_bioyield,aes(x=yi_B,y=yi_Y,colour=System_T))+
-  geom_point(size=2,alpha=0.5)+
+col.synergies = c("Lose B-Lose Y" = "navy","Lose B-Win Y"= "lightblue","Win B-Lose Y" ="gold","Win B-Win Y"= "forestgreen")
+
+label_function = function(data=d_bioyield_zeros,variable,variable_class,number_classes,x=c(2,2,-2,-2),y=c(1.8,-1.5,1.8,-1.5)){
+  Total =  data %>% rename("variable" = variable) %>% filter(variable==variable_class) 
+  WW =  data %>% rename("variable" = variable) %>% filter(variable==variable_class) %>%
+    filter(Synergies == "Win B-Win Y") 
+  WW = paste0(round(nrow(WW)/nrow(Total)*100,1),"%\n(",nrow(WW),")")
+  WL =  data %>% rename("variable" = variable) %>% filter(variable==variable_class) %>%
+    filter(Synergies == "Win B-Lose Y") 
+  WL = paste0(round(nrow(WL)/nrow(Total)*100,1),"%\n(",nrow(WL),")")
+  LW =  data %>% rename("variable" = variable) %>% filter(variable==variable_class) %>%
+    filter(Synergies == "Lose B-Win Y") 
+  LW = paste0(round(nrow(LW)/nrow(Total)*100,1),"%\n(",nrow(LW),")")
+  LL =  data %>% rename("variable" = variable) %>% filter(variable==variable_class) %>%
+    filter(Synergies == "Lose B-Lose Y") 
+  LL = paste0(round(nrow(LL)/nrow(Total)*100,1),"%\n(",nrow(LL),")")
+  labels = data.frame(x=x,y=y,label=c(WW,WL,LW,LL),variable=rep(variable_class,4))
+  colnames(labels)[4] <- variable
+  return(labels)
+}
+
+g_quadrant_function = function(data=d_bioyield_zeros){
+  data=data
+  g <- ggplot(data,aes(x=yi_B,y=yi_Y))+
   geom_hline(yintercept=0)+
   geom_vline(xintercept=0)+
-  ylab("Log RR for Yield")+
-  xlab("Log RR for Biodiversity")+
+  geom_point(aes(fill=Synergies),size=2.5,alpha=1,shape=21,colour="grey20")+
+  #geom_smooth(formula= y~x,method="glm",se=FALSE,method.args = list(family = "gaussian"),colour="grey50")+
+  #geom_smooth(formula= y~x,method="loess",se=FALSE,colour="grey50")+
+  ylab("Log RR for Yield")+  xlab("Log RR for Biodiversity")+
   #ylim(c(-5,5))+
-  #xlim(c(-5,5))+
-  geom_text(aes(x=10,y=10,label=labels[which(labels$Synergies=="Win B-Win Y"),c("Freq_pc")]),inherit.aes=FALSE,colour="forestgreen")+
-  geom_text(aes(x=10,y=-10,label=labels[which(labels$Synergies=="Win B-Lose Y"),c("Freq_pc")]),inherit.aes=FALSE,colour="black")+
-  geom_text(aes(x=-10,y=10,label=labels[which(labels$Synergies=="Lose B-Win Y"),c("Freq_pc")]),inherit.aes=FALSE,colour="black")+
-  geom_text(aes(x=-10,y=-10,label=labels[which(labels$Synergies=="Lose B-Lose Y"),c("Freq_pc")]),inherit.aes=FALSE,colour="red")+
-  scale_colour_brewer(type="qual",palette="Set1",name="")+
-  #scale_fill_manual(values=col.intervention,name="Intervention")+
-  #scale_colour_manual(values=c("grey","black","orange"),name="")+
-  #scale_shape_manual(name="")+
+  #xlim(c(-8,8))+
+  scale_x_continuous(trans = pseudolog10_trans,expand=c(0.05,0.05))+#, breaks= c(-10, -5,-3, -1,0,1,3,5,10))+
+  scale_y_continuous(trans = pseudolog10_trans,expand=c(0.05,0.05))+
+  geom_text(data=labels,aes(x=x,y=y,label=label),size=2.5)+
+  scale_fill_manual(values=col.synergies,name="")+
   theme_bw()+
-  guides(shape=guide_legend(title="",title.position = "top"))
-g
+  #facet_wrap(~System_T,ncol=2,scales="free")+
+  #facet_wrap(~B_measure_group,scales="free",ncol=2)+
+  #facet_wrap(~Yield_measure_group,scales="free",ncol=2)+
+  #facet_wrap(~Taxa_group,scales="free",ncol=2)+
+  #facet_wrap(~B_ground,scales="free",ncol=2)+
+  theme(legend.position="right",
+       strip.background=element_blank())+
+  guides(fill=guide_legend(title="",title.position = "top",ncol=1))
+  print(g)
+  return(g)
+}
+labels1 = label_function(variable="Agrochem_CT",variable_class="Agrochemicals",number_classes=4,x=c(3,3,-3,-3),y=c(1.8,-1.5,1.8,-1.5)) 
+labels2 = label_function(variable="Agrochem_CT",variable_class="No agrochemicals",number_classes=4,x=c(2,2,-0.7,-0.7),y=c(0.7,-1.5,0.7,-1.5))
+labels3 = label_function(variable="Agrochem_CT",variable_class="Mixed",number_classes=4,x=c(2,2,-1.5,-1.5),y=c(1,-1.5,1,-1.5)) 
+labels4 = label_function(variable="Agrochem_CT",variable_class="No data",number_classes=4,x=c(1,1,-1.5,-1.5),y=c(1.5,-1,1.5,-1)) 
+labels=rbind(labels1,labels2,labels3,labels4)
+tiff(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," AGROCHEM.tif"),height=6,width=6,units="in", res=300)
+g_quadrant_function()+  facet_wrap(~Agrochem_CT,ncol=2,scales="free")
+dev.off()
+
+labels1 = label_function(data=d_bioyield,variable="Agrochem_CT",variable_class="Agrochemicals",number_classes=4,x=c(3,3,-3,-3),y=c(1.8,-1.5,1.8,-1.5)) 
+labels2 = label_function(data=d_bioyield,variable="Agrochem_CT",variable_class="No agrochemicals",number_classes=4,x=c(2,2,-0.7,-0.7),y=c(0.7,-1.5,0.7,-1.5))
+labels3 = label_function(data=d_bioyield,variable="Agrochem_CT",variable_class="Mixed",number_classes=4,x=c(2,2,-1.5,-1.5),y=c(1,-1.5,1,-1.5)) 
+labels4 = label_function(data=d_bioyield,variable="Agrochem_CT",variable_class="No data",number_classes=4,x=c(5,5,-1.5,-1.5),y=c(1.5,-1,1.5,-1)) 
+labels=rbind(labels1,labels2,labels3,labels4)
+tiff(paste0(outpath,"Fig yield biodiversity synergies bioyield n=",nrow(d_bioyield)," AGROCHEM.tif"),height=6,width=6,units="in", res=300)
+g_quadrant_function(data=d_bioyield)+  facet_wrap(~Agrochem_CT,ncol=2,scales="free")
+dev.off()
+
+unique(d_bioyield_zeros$System_T)
+labels1 = label_function(variable="System_T",variable_class="Embedded natural",number_classes=7,x=c(3,3,-2,-2),y=c(1,-1.5,1,-1.5)) 
+labels2 = label_function(variable="System_T",variable_class="Associated plant species",number_classes=7,x=c(4,4,-6,-6),y=c(1,-1.5,1,-1.5))
+labels3 = label_function(variable="System_T",variable_class= "Crop rotation" ,number_classes=7,x=c(1,1,-1,-1),y=c(1,-1,1,-1)) 
+labels4 = label_function(variable="System_T",variable_class="Combined practices",number_classes=7,x=c(0.3,0.3,-0.3,-0.3),y=c(0.2,-0.2,0.2,-0.2))
+labels5 = label_function(variable="System_T",variable_class= "Cultivar mixture",number_classes=7,x=c(0.75,0.75,-0.75,-0.75),y=c(0.2,-0.05,0.2,-0.05))
+labels6 = label_function(variable="System_T",variable_class="Agroforestry",number_classes=7,x=c(1.5,1.5,-1,-1),y=c(1,-1,1,-1))
+labels7 = label_function(variable="System_T",variable_class= "Intercropping",number_classes=7,x=c(1.5,1.5,-1.5,-1.5),y=c(1,-0.25,1,-0.25))
+labels=rbind(labels1,labels2,labels3,labels4,labels5,labels6,labels7)
+tiff(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," PRACTICE.tif"),height=6,width=6,units="in", res=300)
+g_quadrant_function()+facet_wrap(~System_T,ncol=2,scales="free")
+dev.off()
+
+labels1 = label_function(data=d_bioyield,variable="System_T",variable_class="Embedded natural",number_classes=7,x=c(4,4,-4,-4),y=c(1,-1.5,1,-1.5)) 
+labels2 = label_function(data=d_bioyield,variable="System_T",variable_class="Associated plant species",number_classes=7,x=c(5,5,-6,-6),y=c(1.5,-1.5,1.5,-1.5))
+labels3 = label_function(data=d_bioyield,variable="System_T",variable_class= "Crop rotation" ,number_classes=7,x=c(1,1,-1,-1),y=c(1,-1,1,-1)) 
+labels4 = label_function(data=d_bioyield,variable="System_T",variable_class="Combined practices",number_classes=7,x=c(0.3,0.3,-0.3,-0.3),y=c(0.2,-0.2,0.2,-0.2))
+labels5 = label_function(data=d_bioyield,variable="System_T",variable_class= "Cultivar mixture",number_classes=7,x=c(0.75,0.75,-0.75,-0.75),y=c(0.2,-0.05,0.2,-0.05))
+labels6 = label_function(data=d_bioyield,variable="System_T",variable_class="Agroforestry",number_classes=7,x=c(1.5,1.5,-1,-1),y=c(1,-1,1,-1))
+labels7 = label_function(data=d_bioyield,variable="System_T",variable_class= "Intercropping",number_classes=7,x=c(1.5,1.5,-1.5,-1.5),y=c(1,-0.25,1,-0.25))
+labels=rbind(labels1,labels2,labels3,labels4,labels5,labels6,labels7)
+tiff(paste0(outpath,"Fig yield biodiversity synergies bioyield n=",nrow(d_bioyield)," PRACTICE.tif"),height=6,width=6,units="in", res=300)
+g_quadrant_function(data=d_bioyield)+facet_wrap(~System_T,ncol=2,scales="free")
+dev.off()
+
+unique(d_bioyield_zeros$Crop_type_CT)
+labels1 = label_function(variable="Crop_type_CT",variable_class="Annual Herb",number_classes=7,x=c(3,3,-3,-3),y=c(1.5,-1.5,1.5,-1.5)) 
+labels2 = label_function(variable="Crop_type_CT",variable_class="Perennial Tree",number_classes=7,x=c(3,3,-3,-3),y=c(0.5,-1,0.5,-1))
+labels3 = label_function(variable="Crop_type_CT",variable_class= "Perennial Herb" ,number_classes=7,x=c(1,1,-1,-1),y=c(1,-1,1,-1)) 
+labels4 = label_function(variable="Crop_type_CT",variable_class="Perennial Shrub/Liana",number_classes=7,x=c(2,2,-1,-1),y=c(0.5,-0.6,0.5,-0.6))
+labels5 = label_function(variable="Crop_type_CT",variable_class= "Annual Shrub",number_classes=7,x=c(5,5,-5,-5),y=c(0.5,-0.5,0.5,-0.5))
+labels=rbind(labels1,labels2,labels3,labels4,labels5)
+tiff(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," CROP TYPE.tif"),height=6,width=6,units="in", res=300)
+g_quadrant_function()+facet_wrap(~Crop_type_CT,ncol=2,scales="free")
+dev.off()
+
+labels1 = label_function(data=d_bioyield,variable="Crop_type_CT",variable_class="Annual Herb",number_classes=7,x=c(3,3,-3,-3),y=c(1.5,-1.5,1.5,-1.5)) 
+labels2 = label_function(data=d_bioyield,variable="Crop_type_CT",variable_class="Perennial Tree",number_classes=7,x=c(3,3,-3,-3),y=c(0.5,-1,0.5,-1))
+labels3 = label_function(data=d_bioyield,variable="Crop_type_CT",variable_class= "Perennial Herb" ,number_classes=7,x=c(1,1,-1,-1),y=c(1,-1,1,-1)) 
+labels4 = label_function(data=d_bioyield,variable="Crop_type_CT",variable_class="Perennial Shrub/Liana",number_classes=7,x=c(2,2,-1,-1),y=c(0.5,-0.6,0.5,-0.6))
+labels5 = label_function(data=d_bioyield,variable="Crop_type_CT",variable_class= "Annual Shrub",number_classes=7,x=c(5,5,-5,-5),y=c(0.5,-0.5,0.5,-0.5))
+labels=rbind(labels1,labels2,labels3,labels4,labels5)
+tiff(paste0(outpath,"Fig yield biodiversity synergies bioyield n=",nrow(d_bioyield)," CROP TYPE.tif"),height=6,width=6,units="in", res=300)
+g_quadrant_function(data=d_bioyield)+facet_wrap(~Crop_type_CT,ncol=2,scales="free")
+dev.off()
+
+unique(d_bioyield_zeros$Biome_simp)
+labels1 = label_function(variable="Biome_simp",variable_class="Tropical & Subtropical Non-forest",number_classes=7,x=c(3,3,-5,-5),y=c(2,-2,2,-2)) 
+labels2 = label_function(variable="Biome_simp",variable_class="Tropical & Subtropical Forests",number_classes=7,x=c(3,3,-3,-3),y=c(0.5,-1,0.5,-1))
+labels3 = label_function(variable="Biome_simp",variable_class= "Temperate Forests" ,number_classes=7,x=c(3,3,-2,-2),y=c(1.5,-2,1.5,-2)) 
+labels4 = label_function(variable="Biome_simp",variable_class="Temperate Non-forest",number_classes=7,x=c(2,2,-2,-2),y=c(1,-1,1,-1))
+labels5 = label_function(variable="Biome_simp",variable_class= "Mediterranean",number_classes=7,x=c(3,3,-3,-3),y=c(1,-1,1,-1))
+labels6 = label_function(variable="Biome_simp",variable_class= "Other",number_classes=7,x=c(2,2,-2,-2),y=c(1,-1,1,-1))
+labels=rbind(labels1,labels2,labels3,labels4,labels5,labels6)
+tiff(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," BIOME.tif"),height=6,width=6,units="in", res=300)
+g_quadrant_function()+facet_wrap(~Biome_simp,ncol=2,scales="free")
+dev.off()
+
+labels1 = label_function(data=d_bioyield,variable="Biome_simp",variable_class="Tropical & Subtropical Non-forest",number_classes=7,x=c(3,3,-5,-5),y=c(2,-2,2,-2)) 
+labels2 = label_function(data=d_bioyield,variable="Biome_simp",variable_class="Tropical & Subtropical Forests",number_classes=7,x=c(3,3,-3,-3),y=c(0.5,-1,0.5,-1))
+labels3 = label_function(data=d_bioyield,variable="Biome_simp",variable_class= "Temperate Forests" ,number_classes=7,x=c(3,3,-2,-2),y=c(1.5,-2,1.5,-2)) 
+labels4 = label_function(data=d_bioyield,variable="Biome_simp",variable_class="Temperate Non-forest",number_classes=7,x=c(2,2,-2,-2),y=c(1,-1,1,-1))
+labels5 = label_function(data=d_bioyield,variable="Biome_simp",variable_class= "Mediterranean",number_classes=7,x=c(3,3,-3,-3),y=c(1,-1,1,-1))
+labels6 = label_function(data=d_bioyield,variable="Biome_simp",variable_class= "Other",number_classes=7,x=c(2,2,-2,-2),y=c(1,-1,1,-1))
+labels=rbind(labels1,labels2,labels3,labels4,labels5,labels6)
+tiff(paste0(outpath,"Fig yield biodiversity synergies bioyield n=",nrow(d_bioyield)," BIOME.tif"),height=6,width=6,units="in", res=300)
+g_quadrant_function(data=d_bioyield)+facet_wrap(~Biome_simp,ncol=2,scales="free")
+dev.off()
+
+
+ggsave(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," CROP FAO.tif"),device="tiff",dpi=300)
+ggsave(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," GROUND GROUP.tif"),device="tiff",dpi=300)
+ggsave(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," PEST GROUP.tif"),device="tiff",dpi=300)
+ggsave(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," TAXA.tif"),device="tiff",dpi=300)
+ggsave(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," YIELD METRIC.tif"),device="tiff",dpi=300)
+ggsave(paste0(outpath,"Fig yield biodiversity synergies bioyield_zeros n=",nrow(d_bioyield_zeros)," BIO METRIC.tif"),device="tiff",dpi=300)
+
 
 ggsave(paste0(outpath,"Fig yield biodiversity synergies all yield effects n=",nrow(d),".tif"),device="tiff",dpi=150)
 ggsave(paste0(outpath,"Fig yield biodiversity synergies all yield effects n=",nrow(d),".pdf"),device="pdf",dpi=150)
