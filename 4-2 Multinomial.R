@@ -239,7 +239,7 @@ rf_imp_explainer <- measure_importance(rf)
 write.csv(rf_imp_explainer,paste0(outpath,"rf_importance.csv"))
 
 rf_imp_explainer <- read.csv(paste0(outpath,"rf_importance.csv"),header=TRUE) %>%
-  #rename(Variable = ï..variable) %>%
+  #rename(Variable = Ã¯..variable) %>%
   rename(Variable = variable) %>%
   mutate(p_value_sig = ifelse(p_value<0.05,"*",NA)) %>%
   mutate(Variable_labels = ifelse(Variable =="Crop_FAO_C","Crop commodity",
