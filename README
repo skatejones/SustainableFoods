@@ -1,6 +1,9 @@
-A global database and meta-analysis of diversified farming effects on biodiversity and yield
+Meta-analysis of diversified farming effects on biodiversity and yield.
 
-Manuscript code: https://github.com/skatejones/SustainableFoods/new/main. Curator: Sarah Jones (s.jones@cgiar.org) Project start year: 2019. Project location: Montpellier France.
+The code provided here is associated with the following publications and we would appreciate it if you would cite one or more of these sources if you reuse parts of the code:
+- Jones, S.K., Sánchez, A.C., Juventia, S.D. et al. A global database of diversified farming effects on biodiversity and yield. Sci Data 8, 212 (2021). https://doi.org/10.1038/s41597-021-01000-y
+- Jones, S.K., Andrea C. Sánchez, Damien Beillouin, Stella D. Juventia, Aline Mosnier, Roseline Remans, Natalia Estrada Carmona. 2022. Achieving win-win outcomes for biodiversity and yield through diversified farming,
+Basic and Applied Ecology,https://doi.org/10.1016/j.baae.2022.12.005.
 
 We analyse a global dataset documenting effects of diversified farming practices on biodiversity and agronomic yields compiled through a systematic review of primary studies. The dataset includes 4076 comparisons of biodiversity outcomes from 237 articles, and 1222 comparisons of yield outcomes from 57 articles. It contains evidence from 48 countries of effects on species from 33 taxonomic orders (spanning insects, plants, birds, mammals, eukaryotes, annelids, fungi, and bacteria) of diversifying farms producing annual or perennial crops across 12 FAO commodity groups. Data collection and reporting followed best standards for systematic reviews and was specifically designed for use in meta-analysis. The dataset was used to analyse synergies and trade-offs for biodiversity and yield when farmland is diversified, by applying multinomial and quantum regression models.
 
@@ -9,4 +12,6 @@ The R scripts are meant for use in sequential order to:
 4-2 fit multinomial logit models
 4-3 fit quantum regression models
 
-The published dataset is available from Dataverse: https://doi.org/10.7910/DVN/XIDI1X
+The published meta-dataset associated with this code is available from Dataverse: https://doi.org/10.7910/DVN/XIDI1X
+
+Code curator: Sarah Jones, s.jones@cgiar.org
